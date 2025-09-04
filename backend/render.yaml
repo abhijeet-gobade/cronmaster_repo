@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: cronmaster-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npx prisma generate && npx prisma db push
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: FRONTEND_URL
+        value: https://your-frontend-url.onrender.com
+      - key: KEEP_ALIVE_ENABLED
+        value: true
+      - key: KEEP_ALIVE_INTERVAL
+        value: 840000
+      - key: LOG_LEVEL
+        value: info
+      - key: JWT_EXPIRES_IN
+        value: 30m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: RATE_LIMIT_WINDOW_MS
+        value: 900000
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: 100
