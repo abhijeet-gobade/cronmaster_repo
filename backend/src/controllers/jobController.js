@@ -608,6 +608,81 @@ const getJobLogs = async (req, res) => {
 };
 
 /**
+ * Get all executions for the authenticated user (for logs page)
+ */
+const getAllExecutions = async (req, res) => {
+  // Validate pagination parameters
+  const { error, value } = validatePagination(req.query);
+  if (error) {
+    throw new ValidationError(error.details[0].message);
+  }
+
+  const { page, limit, sortBy, sortOrder } = value;
+  const offset = (page - 1) * limit;
+
+  // Build where clause for filtering
+  const where = {
+    job: { user_id: req.user.id }
+  };
+
+  // Add status filter if provided
+  if (req.query.status && ['success', 'failed', 'timeout', 'cancelled'].includes(req.query.status)) {
+    where.status = req.query.status;
+  }
+
+  // Add search filter if provided
+  if (req.query.search) {
+    const searchTerm = req.query.search.trim();
+    where.job = {
+      ...where.job,
+      OR: [
+        { name: { contains: searchTerm, mode: 'insensitive' } },
+        { url: { contains: searchTerm, mode: 'insensitive' } }
+      ]
+    };
+  }
+
+  // Get executions with pagination
+  const [executions, totalCount] = await Promise.all([
+    prisma.jobExecution.findMany({
+      where,
+      include: {
+        job: {
+          select: {
+            id: true,
+            name: true,
+            url: true,
+            method: true
+          }
+        }
+      },
+      orderBy: { executed_at: sortOrder },
+      skip: offset,
+      take: limit
+    }),
+    prisma.jobExecution.count({ where })
+  ]);
+
+  const totalPages = Math.ceil(totalCount / limit);
+
+  res.json({
+    success: true,
+    message: 'Executions retrieved successfully',
+    data: {
+      executions,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        pageSize: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    }
+  });
+};
+
+/**
  * Get dashboard statistics for jobs
  */
 const getDashboardStats = async (req, res) => {
@@ -724,5 +799,6 @@ module.exports = {
   toggleJobStatus,
   triggerJob,
   getJobLogs,
+  getAllExecutions,
   getDashboardStats
 };

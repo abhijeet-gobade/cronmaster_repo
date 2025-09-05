@@ -62,6 +62,11 @@ const apiRequest = async (endpoint, options = {}) => {
 
 // Job API functions
 export const jobsAPI = {
+  // Get dashboard statistics
+  getDashboardStats: async () => {
+    return apiRequest('/api/jobs/dashboard-stats');
+  },
+
   // Get all jobs
   getJobs: async (params = {}) => {
     const searchParams = new URLSearchParams(params);
@@ -114,6 +119,12 @@ export const jobsAPI = {
   getJobLogs: async (id, params = {}) => {
     const searchParams = new URLSearchParams(params);
     return apiRequest(`/api/jobs/${id}/logs?${searchParams}`);
+  },
+
+  // Get all executions (for logs page)
+  getAllExecutions: async (params = {}) => {
+    const searchParams = new URLSearchParams(params);
+    return apiRequest(`/api/jobs/executions?${searchParams}`);
   }
 };
 

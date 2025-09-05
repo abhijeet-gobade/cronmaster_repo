@@ -24,24 +24,49 @@ const CreateJobPage = () => {
     { label: 'Monthly (1st)', value: '0 0 1 * *', description: 'Runs on the 1st of every month' }
   ];
 
-  const handleInputChange = (field, value) => {
-    setJobData(prev => ({ ...prev, [field]: value }));
+  // Simple event handlers that match the working pattern from JobsList
+  const handleNameChange = (e) => {
+    setJobData(prev => ({ ...prev, name: e.target.value }));
+  };
+
+  const handleUrlChange = (e) => {
+    const value = e.target.value;
+    setJobData(prev => ({ ...prev, url: value }));
     
-    // Validate URL
-    if (field === 'url') {
+    // Simple validation without setTimeout
+    if (value) {
       try {
         new URL(value);
         setIsValidUrl(true);
       } catch {
-        setIsValidUrl(value === '' || value.startsWith('http'));
+        setIsValidUrl(value.startsWith('http'));
       }
+    } else {
+      setIsValidUrl(true);
     }
-    
-    // Validate cron expression (basic validation)
-    if (field === 'cronExpression') {
-      const parts = value.split(' ');
-      setIsValidCron(parts.length === 5);
-    }
+  };
+
+  const handleMethodChange = (e) => {
+    setJobData(prev => ({ ...prev, method: e.target.value }));
+  };
+
+  const handleCronChange = (e) => {
+    const value = e.target.value;
+    setJobData(prev => ({ ...prev, cronExpression: value }));
+    setIsValidCron(value.split(' ').length === 5);
+  };
+
+  const handleTimezoneChange = (e) => {
+    setJobData(prev => ({ ...prev, timezone: e.target.value }));
+  };
+
+  const handleDescriptionChange = (e) => {
+    setJobData(prev => ({ ...prev, description: e.target.value }));
+  };
+
+  const handlePresetClick = (presetValue) => {
+    setJobData(prev => ({ ...prev, cronExpression: presetValue }));
+    setIsValidCron(true);
   };
 
   const parseCronExpression = (cron) => {
@@ -70,11 +95,47 @@ const CreateJobPage = () => {
     return description;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Creating job:', jobData);
-    // Here you'd make API call to create the job
-    alert('Job created successfully! (This would be an API call)');
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('cronmaster_access_token')}`
+        },
+        body: JSON.stringify({
+          name: jobData.name,
+          url: jobData.url,
+          method: jobData.method,
+          cronExpression: jobData.cronExpression,
+          timezone: jobData.timezone,
+          description: jobData.description
+        })
+      });
+
+      if (response.ok) {
+        alert('Job created successfully!');
+        // Reset form
+        setJobData({
+          name: '',
+          url: '',
+          method: 'GET',
+          cronExpression: '0 0 * * *',
+          timezone: 'UTC',
+          description: ''
+        });
+        setIsValidUrl(true);
+        setIsValidCron(true);
+      } else {
+        const error = await response.json();
+        alert(`Error: ${error.message || 'Failed to create job'}`);
+      }
+    } catch (error) {
+      console.error('Error creating job:', error);
+      alert('Failed to create job. Please try again.');
+    }
   };
 
   const FormField = ({ label, children, required = false, error = null, icon = null }) => (
@@ -135,7 +196,7 @@ const CreateJobPage = () => {
                   <input
                     type="text"
                     value={jobData.name}
-                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    onChange={handleNameChange}
                     className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                     placeholder="My API Health Check"
                     required
@@ -145,7 +206,7 @@ const CreateJobPage = () => {
                 <FormField label="HTTP Method" icon={<Globe className="w-4 h-4" />}>
                   <select
                     value={jobData.method}
-                    onChange={(e) => handleInputChange('method', e.target.value)}
+                    onChange={handleMethodChange}
                     className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                   >
                     <option value="GET">GET</option>
@@ -168,7 +229,7 @@ const CreateJobPage = () => {
                   <input
                     type="url"
                     value={jobData.url}
-                    onChange={(e) => handleInputChange('url', e.target.value)}
+                    onChange={handleUrlChange}
                     className={`form-input w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 transition-all ${
                       isValidUrl ? 'border-gray-300 focus:border-blue-500' : 'border-red-300 focus:border-red-500 focus:ring-red-500'
                     }`}
@@ -196,7 +257,7 @@ const CreateJobPage = () => {
                       <button
                         key={preset.value}
                         type="button"
-                        onClick={() => handleInputChange('cronExpression', preset.value)}
+                        onClick={() => handlePresetClick(preset.value)}
                         className={`group p-3 text-sm rounded-xl border transition-all duration-300 text-left ${
                           jobData.cronExpression === preset.value
                             ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-blue-300 text-white shadow-lg transform scale-105'
@@ -224,7 +285,7 @@ const CreateJobPage = () => {
                     <input
                       type="text"
                       value={jobData.cronExpression}
-                      onChange={(e) => handleInputChange('cronExpression', e.target.value)}
+                      onChange={handleCronChange}
                       className={`form-input w-full px-4 py-3 border rounded-xl focus:ring-2 font-mono transition-all ${
                         isValidCron ? 'border-gray-300 focus:border-blue-500 focus:ring-blue-500' : 'border-red-300 focus:border-red-500 focus:ring-red-500'
                       }`}
@@ -236,7 +297,7 @@ const CreateJobPage = () => {
                   <FormField label="Timezone">
                     <select
                       value={jobData.timezone}
-                      onChange={(e) => handleInputChange('timezone', e.target.value)}
+                      onChange={handleTimezoneChange}
                       className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                     >
                       <option value="UTC">UTC (Coordinated Universal Time)</option>
@@ -275,7 +336,7 @@ const CreateJobPage = () => {
               <FormField label="Description (Optional)">
                 <textarea
                   value={jobData.description}
-                  onChange={(e) => handleInputChange('description', e.target.value)}
+                  onChange={handleDescriptionChange}
                   className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none"
                   rows="4"
                   placeholder="Describe what this job does, its purpose, and any important notes..."
