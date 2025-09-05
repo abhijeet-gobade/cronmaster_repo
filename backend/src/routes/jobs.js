@@ -1,6 +1,6 @@
 const express = require('express');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { authenticateToken, requireActiveAccount, logUserActivity } = require('../middleware/auth');
+const { authenticateToken, requireOwnership } = require('../middleware/auth');
 
 const {
   createJob,
@@ -9,55 +9,27 @@ const {
   updateJob,
   deleteJob,
   toggleJobStatus,
-  getJobStats
+  triggerJob,
+  getJobLogs,
+  getDashboardStats
 } = require('../controllers/jobController');
 
 const router = express.Router();
 
-// All job routes require authentication
+// All routes require authentication
 router.use(authenticateToken);
-router.use(requireActiveAccount);
 
-// Get job statistics for dashboard
-router.get('/stats', 
-  logUserActivity('view_job_stats'),
-  asyncHandler(getJobStats)
-);
+// Public job routes (for authenticated user)
+router.get('/dashboard-stats', asyncHandler(getDashboardStats));
+router.get('/', asyncHandler(getJobs));
+router.post('/', asyncHandler(createJob));
 
-// Get all jobs with filtering and pagination
-router.get('/', 
-  logUserActivity('view_jobs'),
-  asyncHandler(getJobs)
-);
-
-// Create a new job
-router.post('/', 
-  logUserActivity('create_job'),
-  asyncHandler(createJob)
-);
-
-// Get specific job by ID
-router.get('/:id', 
-  logUserActivity('view_job_details'),
-  asyncHandler(getJobById)
-);
-
-// Update a job
-router.put('/:id', 
-  logUserActivity('update_job'),
-  asyncHandler(updateJob)
-);
-
-// Toggle job status (active/paused)
-router.patch('/:id/toggle', 
-  logUserActivity('toggle_job_status'),
-  asyncHandler(toggleJobStatus)
-);
-
-// Delete a job (soft delete)
-router.delete('/:id', 
-  logUserActivity('delete_job'),
-  asyncHandler(deleteJob)
-);
+// Job-specific routes (require ownership)
+router.get('/:id', requireOwnership('cronJob'), asyncHandler(getJobById));
+router.put('/:id', requireOwnership('cronJob'), asyncHandler(updateJob));
+router.delete('/:id', requireOwnership('cronJob'), asyncHandler(deleteJob));
+router.patch('/:id/toggle', requireOwnership('cronJob'), asyncHandler(toggleJobStatus));
+router.post('/:id/trigger', requireOwnership('cronJob'), asyncHandler(triggerJob));
+router.get('/:id/logs', requireOwnership('cronJob'), asyncHandler(getJobLogs));
 
 module.exports = router;

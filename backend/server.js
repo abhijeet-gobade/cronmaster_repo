@@ -1,47 +1,91 @@
 require('dotenv').config();
 const app = require('./src/app');
+const { checkDatabaseConnection, disconnectDatabase } = require('./src/models');
+const jobWorker = require('./src/services/jobWorker');
 const logger = require('./src/utils/logger');
 const keepAlive = require('./src/utils/keepAlive');
 
 const PORT = process.env.PORT || 3001;
 
-const server = app.listen(PORT, () => {
-  logger.info(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
-  logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
-  
-  // Start keep-alive service to prevent Render from sleeping
-  keepAlive.start();
-});
+async function startServer() {
+  try {
+    // Check database connection
+    const isDbConnected = await checkDatabaseConnection();
+    if (!isDbConnected) {
+      throw new Error('Database connection failed');
+    }
 
-// Graceful shutdown handling
-const gracefulShutdown = (signal) => {
-  logger.info(`${signal} received, shutting down gracefully`);
-  
-  // Stop keep-alive service
-  keepAlive.stop();
-  
-  server.close(() => {
-    logger.info('✅ Server closed successfully');
-    process.exit(0);
-  });
-  
-  // Force close after 10 seconds
-  setTimeout(() => {
-    logger.error('❌ Forced shutdown after timeout');
+    // Start the HTTP server
+    const server = app.listen(PORT, () => {
+      logger.info(`🚀 CronMaster API Server running on port ${PORT}`);
+      logger.info(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+      logger.info(`🌐 API URL: http://localhost:${PORT}`);
+      logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
+    });
+
+    // Start keep-alive service to prevent Render from sleeping
+    if (process.env.NODE_ENV === 'production') {
+      keepAlive.start();
+    }
+
+    // Start the job worker service
+    await jobWorker.start();
+
+    // Graceful shutdown handlers
+    const gracefulShutdown = async (signal) => {
+      logger.info(`🛑 Received ${signal}, starting graceful shutdown...`);
+
+      // Stop accepting new connections
+      server.close(async () => {
+        logger.info('📪 HTTP server closed');
+
+        try {
+          // Stop keep-alive service
+          if (process.env.NODE_ENV === 'production') {
+            keepAlive.stop();
+          }
+
+          // Stop job worker
+          await jobWorker.stop();
+          
+          // Close database connections
+          await disconnectDatabase();
+
+          logger.info('✅ Graceful shutdown completed');
+          process.exit(0);
+        } catch (error) {
+          logger.error('❌ Error during shutdown:', error);
+          process.exit(1);
+        }
+      });
+
+      // Force shutdown after 30 seconds
+      setTimeout(() => {
+        logger.error('❌ Forced shutdown - server did not close gracefully');
+        process.exit(1);
+      }, 30000);
+    };
+
+    // Handle shutdown signals
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+    // Handle uncaught exceptions
+    process.on('uncaughtException', (error) => {
+      logger.error('❌ Uncaught Exception:', error);
+      gracefulShutdown('uncaughtException');
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      logger.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+      gracefulShutdown('unhandledRejection');
+    });
+
+  } catch (error) {
+    logger.error('❌ Failed to start server:', error);
     process.exit(1);
-  }, 10000);
-};
+  }
+}
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', error);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
-});
+// Start the server
+startServer();

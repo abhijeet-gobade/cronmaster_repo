@@ -75,6 +75,15 @@ const createJob = async (req, res) => {
     }
   });
 
+  // Add the job to the worker scheduler
+  try {
+    const jobWorker = require('../services/jobWorker');
+    await jobWorker.addJob(job.id);
+  } catch (error) {
+    logger.error('Failed to add job to scheduler:', error);
+    // Don't fail the creation, just log the error
+  }
+
   logger.info('Cron job created', {
     userId: req.user.id,
     jobId: job.id,
@@ -208,7 +217,8 @@ const getJobById = async (req, res) => {
           status: true,
           duration: true,
           response_code: true,
-          error_message: true
+          error_message: true,
+          triggered_by: true
         }
       }
     }
@@ -315,6 +325,18 @@ const updateJob = async (req, res) => {
     }
   });
 
+  // Update job in scheduler if it's active
+  try {
+    const jobWorker = require('../services/jobWorker');
+    if (updatedJob.status === 'active') {
+      await jobWorker.addJob(updatedJob.id);
+    } else {
+      jobWorker.removeJob(updatedJob.id);
+    }
+  } catch (error) {
+    logger.error('Failed to update job in scheduler:', error);
+  }
+
   logger.info('Cron job updated', {
     userId: req.user.id,
     jobId: updatedJob.id,
@@ -364,6 +386,14 @@ const deleteJob = async (req, res) => {
       updated_at: new Date()
     }
   });
+
+  // Remove job from scheduler
+  try {
+    const jobWorker = require('../services/jobWorker');
+    jobWorker.removeJob(jobId);
+  } catch (error) {
+    logger.error('Failed to remove job from scheduler:', error);
+  }
 
   logger.info('Cron job deleted', {
     userId: req.user.id,
@@ -421,6 +451,18 @@ const toggleJobStatus = async (req, res) => {
     }
   });
 
+  // Update job in scheduler
+  try {
+    const jobWorker = require('../services/jobWorker');
+    if (newStatus === 'active') {
+      await jobWorker.addJob(jobId);
+    } else {
+      jobWorker.removeJob(jobId);
+    }
+  } catch (error) {
+    logger.error('Failed to update job in scheduler:', error);
+  }
+
   logger.info('Cron job status toggled', {
     userId: req.user.id,
     jobId: jobId,
@@ -436,79 +478,241 @@ const toggleJobStatus = async (req, res) => {
 };
 
 /**
- * Get job statistics for dashboard
+ * Manually trigger a job execution
  */
-const getJobStats = async (req, res) => {
-  const userId = req.user.id;
+const triggerJob = async (req, res) => {
+  const jobId = parseInt(req.params.id);
 
-  // Get job counts by status
-  const jobStats = await prisma.cronJob.groupBy({
-    by: ['status'],
+  if (isNaN(jobId)) {
+    throw new ValidationError('Invalid job ID');
+  }
+
+  // Check if job exists and belongs to user
+  const job = await prisma.cronJob.findFirst({
     where: { 
-      user_id: userId,
+      id: jobId,
+      user_id: req.user.id,
       status: { not: 'deleted' }
-    },
-    _count: { id: true }
-  });
-
-  // Get execution stats for last 30 days
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const executionStats = await prisma.jobExecution.groupBy({
-    by: ['status'],
-    where: {
-      job: { user_id: userId },
-      executed_at: { gte: thirtyDaysAgo }
-    },
-    _count: { id: true }
-  });
-
-  // Get total execution count
-  const totalExecutions = await prisma.jobExecution.count({
-    where: {
-      job: { user_id: userId }
     }
   });
 
-  // Calculate success rate
-  const successfulExecutions = executionStats.find(stat => stat.status === 'success')?._count.id || 0;
-  const totalRecentExecutions = executionStats.reduce((sum, stat) => sum + stat._count.id, 0);
-  const successRate = totalRecentExecutions > 0 
-    ? ((successfulExecutions / totalRecentExecutions) * 100).toFixed(2)
-    : 0;
+  if (!job) {
+    throw new NotFoundError('Job not found');
+  }
 
-  // Format job stats
-  const formattedJobStats = jobStats.reduce((acc, stat) => {
-    acc[stat.status] = stat._count.id;
-    return acc;
-  }, { active: 0, paused: 0 });
+  try {
+    // Import the job worker
+    const jobWorker = require('../services/jobWorker');
+    
+    // Trigger the job
+    const result = await jobWorker.triggerJob(jobId);
+    
+    logger.info('Job triggered manually', {
+      userId: req.user.id,
+      jobId: jobId,
+      jobName: job.name
+    });
 
-  // Format execution stats
-  const formattedExecutionStats = executionStats.reduce((acc, stat) => {
-    acc[stat.status] = stat._count.id;
-    return acc;
-  }, { success: 0, failed: 0, timeout: 0, cancelled: 0 });
+    res.json({
+      success: true,
+      message: 'Job triggered successfully',
+      data: result
+    });
+  } catch (error) {
+    logger.error('Failed to trigger job', {
+      userId: req.user.id,
+      jobId: jobId,
+      error: error.message
+    });
 
-  const stats = {
-    jobs: {
-      total: formattedJobStats.active + formattedJobStats.paused,
-      active: formattedJobStats.active,
-      paused: formattedJobStats.paused
-    },
-    executions: {
-      total: totalExecutions,
-      last30Days: totalRecentExecutions,
-      byStatus: formattedExecutionStats,
-      successRate: parseFloat(successRate)
+    throw new Error(`Failed to trigger job: ${error.message}`);
+  }
+};
+
+/**
+ * Get job execution logs
+ */
+const getJobLogs = async (req, res) => {
+  const jobId = parseInt(req.params.id);
+
+  if (isNaN(jobId)) {
+    throw new ValidationError('Invalid job ID');
+  }
+
+  // Validate pagination parameters
+  const { error, value } = validatePagination(req.query);
+  if (error) {
+    throw new ValidationError(error.details[0].message);
+  }
+
+  const { page, limit, sortBy, sortOrder } = value;
+  const offset = (page - 1) * limit;
+
+  // Check if job exists and belongs to user
+  const job = await prisma.cronJob.findFirst({
+    where: { 
+      id: jobId,
+      user_id: req.user.id,
+      status: { not: 'deleted' }
     }
-  };
+  });
+
+  if (!job) {
+    throw new NotFoundError('Job not found');
+  }
+
+  // Get executions with pagination
+  const [executions, totalCount] = await Promise.all([
+    prisma.jobExecution.findMany({
+      where: { job_id: jobId },
+      orderBy: { executed_at: sortOrder },
+      skip: offset,
+      take: limit,
+      select: {
+        id: true,
+        executed_at: true,
+        status: true,
+        duration: true,
+        response_code: true,
+        response_body: true,
+        response_headers: true,
+        error_message: true,
+        triggered_by: true
+      }
+    }),
+    prisma.jobExecution.count({ where: { job_id: jobId } })
+  ]);
+
+  const totalPages = Math.ceil(totalCount / limit);
 
   res.json({
     success: true,
-    message: 'Job statistics retrieved successfully',
-    data: { stats }
+    message: 'Job logs retrieved successfully',
+    data: {
+      job: {
+        id: job.id,
+        name: job.name,
+        url: job.url
+      },
+      executions,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        pageSize: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    }
   });
+};
+
+/**
+ * Get dashboard statistics for jobs
+ */
+const getDashboardStats = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    // Get job counts by status
+    const jobStats = await prisma.cronJob.groupBy({
+      by: ['status'],
+      where: { 
+        user_id: userId,
+        status: { not: 'deleted' }
+      },
+      _count: { id: true }
+    });
+
+    // Get execution stats for last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const executionStats = await prisma.jobExecution.groupBy({
+      by: ['status'],
+      where: {
+        job: { user_id: userId },
+        executed_at: { gte: thirtyDaysAgo }
+      },
+      _count: { id: true }
+    });
+
+    // Get recent executions
+    const recentExecutions = await prisma.jobExecution.findMany({
+      where: {
+        job: { user_id: userId }
+      },
+      include: {
+        job: {
+          select: { id: true, name: true, url: true }
+        }
+      },
+      orderBy: { executed_at: 'desc' },
+      take: 10
+    });
+
+    // Get upcoming jobs (next 5 executions)
+    const upcomingJobs = await prisma.cronJob.findMany({
+      where: {
+        user_id: userId,
+        status: 'active',
+        next_execution: { not: null }
+      },
+      select: {
+        id: true,
+        name: true,
+        url: true,
+        cron_expression: true,
+        next_execution: true
+      },
+      orderBy: { next_execution: 'asc' },
+      take: 5
+    });
+
+    // Calculate totals
+    const totalJobs = jobStats.reduce((sum, stat) => sum + stat._count.id, 0);
+    const totalExecutions = executionStats.reduce((sum, stat) => sum + stat._count.id, 0);
+    
+    const successfulExecutions = executionStats.find(stat => stat.status === 'success')?._count.id || 0;
+    const failedExecutions = executionStats.find(stat => stat.status === 'failed')?._count.id || 0;
+    
+    const successRate = totalExecutions > 0 ? 
+      ((successfulExecutions / totalExecutions) * 100).toFixed(2) : 0;
+
+    res.json({
+      success: true,
+      message: 'Dashboard statistics retrieved successfully',
+      data: {
+        summary: {
+          totalJobs,
+          activeJobs: jobStats.find(stat => stat.status === 'active')?._count.id || 0,
+          pausedJobs: jobStats.find(stat => stat.status === 'paused')?._count.id || 0,
+          totalExecutions,
+          successfulExecutions,
+          failedExecutions,
+          successRate: parseFloat(successRate)
+        },
+        recentExecutions,
+        upcomingJobs,
+        charts: {
+          executionsByStatus: executionStats.map(stat => ({
+            status: stat.status,
+            count: stat._count.id
+          })),
+          jobsByStatus: jobStats.map(stat => ({
+            status: stat.status,
+            count: stat._count.id
+          }))
+        }
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get dashboard stats', {
+      userId,
+      error: error.message
+    });
+    throw error;
+  }
 };
 
 module.exports = {
@@ -518,5 +722,7 @@ module.exports = {
   updateJob,
   deleteJob,
   toggleJobStatus,
-  getJobStats
+  triggerJob,
+  getJobLogs,
+  getDashboardStats
 };
