@@ -1,4 +1,4 @@
- // This is your Prisma schema file,
+// This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -37,6 +37,7 @@ model CronJob {
   timezone          String    @default("UTC")
   headers           Json?     // Store custom headers as JSON
   body              String?   // Request body for POST/PUT requests
+  description       String?   // Optional description for the job
   status            String    @default("active") // active, paused, deleted
   success_count     Int       @default(0)
   failure_count     Int       @default(0)

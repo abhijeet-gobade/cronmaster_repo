@@ -1,6 +1,24 @@
 import React, { useState } from 'react';
 import { Clock, Globe, Calendar, Play, Eye, Sparkles, Zap, CheckCircle, AlertCircle } from 'lucide-react';
 
+// Move FormField outside the main component to prevent re-creation
+const FormField = ({ label, children, required = false, error = null, icon = null }) => (
+  <div className="space-y-2">
+    <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
+      {icon && <span className="text-blue-600">{icon}</span>}
+      {label}
+      {required && <span className="text-red-500">*</span>}
+    </label>
+    {children}
+    {error && (
+      <div className="flex items-center gap-2 text-sm text-red-600">
+        <AlertCircle className="w-4 h-4" />
+        {error}
+      </div>
+    )}
+  </div>
+);
+
 const CreateJobPage = () => {
   const [jobData, setJobData] = useState({
     name: '',
@@ -24,44 +42,27 @@ const CreateJobPage = () => {
     { label: 'Monthly (1st)', value: '0 0 1 * *', description: 'Runs on the 1st of every month' }
   ];
 
-  // Simple event handlers that match the working pattern from JobsList
-  const handleNameChange = (e) => {
-    setJobData(prev => ({ ...prev, name: e.target.value }));
-  };
-
-  const handleUrlChange = (e) => {
-    const value = e.target.value;
-    setJobData(prev => ({ ...prev, url: value }));
+  // Combine all change handlers into one to reduce re-renders
+  const handleInputChange = (field, value) => {
+    setJobData(prev => ({ ...prev, [field]: value }));
     
-    // Simple validation without setTimeout
-    if (value) {
-      try {
-        new URL(value);
+    // Handle specific field validations
+    if (field === 'url') {
+      if (value) {
+        try {
+          new URL(value);
+          setIsValidUrl(true);
+        } catch {
+          setIsValidUrl(value.startsWith('http'));
+        }
+      } else {
         setIsValidUrl(true);
-      } catch {
-        setIsValidUrl(value.startsWith('http'));
       }
-    } else {
-      setIsValidUrl(true);
     }
-  };
-
-  const handleMethodChange = (e) => {
-    setJobData(prev => ({ ...prev, method: e.target.value }));
-  };
-
-  const handleCronChange = (e) => {
-    const value = e.target.value;
-    setJobData(prev => ({ ...prev, cronExpression: value }));
-    setIsValidCron(value.split(' ').length === 5);
-  };
-
-  const handleTimezoneChange = (e) => {
-    setJobData(prev => ({ ...prev, timezone: e.target.value }));
-  };
-
-  const handleDescriptionChange = (e) => {
-    setJobData(prev => ({ ...prev, description: e.target.value }));
+    
+    if (field === 'cronExpression') {
+      setIsValidCron(value.split(' ').length === 5);
+    }
   };
 
   const handlePresetClick = (presetValue) => {
@@ -138,23 +139,6 @@ const CreateJobPage = () => {
     }
   };
 
-  const FormField = ({ label, children, required = false, error = null, icon = null }) => (
-    <div className="space-y-2">
-      <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
-        {icon && <span className="text-blue-600">{icon}</span>}
-        {label}
-        {required && <span className="text-red-500">*</span>}
-      </label>
-      {children}
-      {error && (
-        <div className="flex items-center gap-2 text-sm text-red-600">
-          <AlertCircle className="w-4 h-4" />
-          {error}
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <div className="min-h-screen py-8 px-4">
       <div className="max-w-4xl mx-auto">
@@ -196,7 +180,7 @@ const CreateJobPage = () => {
                   <input
                     type="text"
                     value={jobData.name}
-                    onChange={handleNameChange}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
                     className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                     placeholder="My API Health Check"
                     required
@@ -206,7 +190,7 @@ const CreateJobPage = () => {
                 <FormField label="HTTP Method" icon={<Globe className="w-4 h-4" />}>
                   <select
                     value={jobData.method}
-                    onChange={handleMethodChange}
+                    onChange={(e) => handleInputChange('method', e.target.value)}
                     className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                   >
                     <option value="GET">GET</option>
@@ -229,7 +213,7 @@ const CreateJobPage = () => {
                   <input
                     type="url"
                     value={jobData.url}
-                    onChange={handleUrlChange}
+                    onChange={(e) => handleInputChange('url', e.target.value)}
                     className={`form-input w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 transition-all ${
                       isValidUrl ? 'border-gray-300 focus:border-blue-500' : 'border-red-300 focus:border-red-500 focus:ring-red-500'
                     }`}
@@ -285,7 +269,7 @@ const CreateJobPage = () => {
                     <input
                       type="text"
                       value={jobData.cronExpression}
-                      onChange={handleCronChange}
+                      onChange={(e) => handleInputChange('cronExpression', e.target.value)}
                       className={`form-input w-full px-4 py-3 border rounded-xl focus:ring-2 font-mono transition-all ${
                         isValidCron ? 'border-gray-300 focus:border-blue-500 focus:ring-blue-500' : 'border-red-300 focus:border-red-500 focus:ring-red-500'
                       }`}
@@ -297,7 +281,7 @@ const CreateJobPage = () => {
                   <FormField label="Timezone">
                     <select
                       value={jobData.timezone}
-                      onChange={handleTimezoneChange}
+                      onChange={(e) => handleInputChange('timezone', e.target.value)}
                       className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
                     >
                       <option value="UTC">UTC (Coordinated Universal Time)</option>
@@ -336,7 +320,7 @@ const CreateJobPage = () => {
               <FormField label="Description (Optional)">
                 <textarea
                   value={jobData.description}
-                  onChange={handleDescriptionChange}
+                  onChange={(e) => handleInputChange('description', e.target.value)}
                   className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none"
                   rows="4"
                   placeholder="Describe what this job does, its purpose, and any important notes..."

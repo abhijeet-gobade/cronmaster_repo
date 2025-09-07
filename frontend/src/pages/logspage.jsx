@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -17,139 +17,87 @@ import {
   Sparkles,
   Globe,
   Timer,
-  Activity
+  Activity,
+  Loader2
 } from 'lucide-react';
+import { jobsAPI } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 
 const LogsPage = () => {
-  // Mock data - replace with real API calls
-  const [logs] = useState([
-    {
-      id: 1,
-      jobId: 1,
-      jobName: "API Health Check",
-      url: "https://api.myservice.com/health",
-      method: "GET",
-      status: "success",
-      executedAt: "2024-01-15T10:25:00Z",
-      duration: 245,
-      responseCode: 200,
-      responseBody: '{"status": "healthy", "version": "1.2.3", "uptime": 3600}',
-      responseHeaders: {
-        "content-type": "application/json",
-        "server": "nginx/1.18.0",
-        "x-response-time": "245ms"
-      },
-      errorMessage: null,
-      triggeredBy: "cron"
-    },
-    {
-      id: 2,
-      jobId: 2,
-      jobName: "Daily Report Generator",
-      url: "https://reports.company.com/generate",
-      method: "POST",
-      status: "success",
-      executedAt: "2024-01-15T09:00:00Z",
-      duration: 3420,
-      responseCode: 201,
-      responseBody: '{"reportId": "rpt_123456", "status": "generated", "size": "2.4MB"}',
-      responseHeaders: {
-        "content-type": "application/json",
-        "location": "/reports/rpt_123456"
-      },
-      errorMessage: null,
-      triggeredBy: "cron"
-    },
-    {
-      id: 3,
-      jobId: 3,
-      jobName: "Database Backup",
-      url: "https://backup.service.com/db",
-      method: "POST",
-      status: "failed",
-      executedAt: "2024-01-14T02:00:00Z",
-      duration: 30000,
-      responseCode: 500,
-      responseBody: '{"error": "Connection timeout", "code": "TIMEOUT", "details": "Database connection failed after 30 seconds"}',
-      responseHeaders: {
-        "content-type": "application/json"
-      },
-      errorMessage: "Connection timeout after 30 seconds",
-      triggeredBy: "cron"
-    },
-    {
-      id: 4,
-      jobId: 1,
-      jobName: "API Health Check",
-      url: "https://api.myservice.com/health",
-      method: "GET",
-      status: "success",
-      executedAt: "2024-01-15T10:20:00Z",
-      duration: 189,
-      responseCode: 200,
-      responseBody: '{"status": "healthy", "version": "1.2.3", "uptime": 3300}',
-      responseHeaders: {
-        "content-type": "application/json",
-        "server": "nginx/1.18.0"
-      },
-      errorMessage: null,
-      triggeredBy: "cron"
-    },
-    {
-      id: 5,
-      jobId: 4,
-      jobName: "Cache Invalidation",
-      url: "https://cdn.example.com/purge",
-      method: "DELETE",
-      status: "success",
-      executedAt: "2024-01-15T08:00:00Z",
-      duration: 567,
-      responseCode: 204,
-      responseBody: "",
-      responseHeaders: {
-        "server": "cloudflare",
-        "cache-control": "no-cache"
-      },
-      errorMessage: null,
-      triggeredBy: "cron"
-    },
-    {
-      id: 6,
-      jobId: 1,
-      jobName: "API Health Check",
-      url: "https://api.myservice.com/health",
-      method: "GET",
-      status: "failed",
-      executedAt: "2024-01-14T15:30:00Z",
-      duration: 5000,
-      responseCode: 503,
-      responseBody: '{"error": "Service temporarily unavailable", "retry_after": 300}',
-      responseHeaders: {
-        "content-type": "application/json"
-      },
-      errorMessage: "HTTP 503 Service Unavailable",
-      triggeredBy: "cron"
-    }
-  ]);
-
-  const [jobs] = useState([
-    { id: 1, name: "API Health Check" },
-    { id: 2, name: "Daily Report Generator" },
-    { id: 3, name: "Database Backup" },
-    { id: 4, name: "Cache Invalidation" },
-    { id: 5, name: "Send Weekly Newsletter" }
-  ]);
-
+  const [logs, setLogs] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [jobFilter, setJobFilter] = useState('all');
   const [expandedLogs, setExpandedLogs] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    successful: 0,
+    failed: 0,
+    avgDuration: 0
+  });
+
+const navigate = useNavigate();
+
+  // Fetch logs and jobs from API
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Fetch jobs first to get the list for filtering
+      const jobsResponse = await jobsAPI.getJobs();
+      if (jobsResponse.success) {
+        setJobs(jobsResponse.data?.jobs || []);
+      }
+
+      // Fetch all executions for logs page
+      const logsResponse = await jobsAPI.getAllExecutions();
+      if (logsResponse.success) {
+        const executions = logsResponse.data?.executions || [];
+        setLogs(executions);
+        
+        // Calculate stats
+        const totalExecutions = executions.length;
+        const successfulExecutions = executions.filter(log => log.status === 'success').length;
+        const failedExecutions = executions.filter(log => log.status === 'failed').length;
+        const avgDuration = totalExecutions > 0 
+          ? executions.reduce((sum, log) => sum + (log.duration || 0), 0) / totalExecutions 
+          : 0;
+
+        setStats({
+          total: totalExecutions,
+          successful: successfulExecutions,
+          failed: failedExecutions,
+          avgDuration: Math.round(avgDuration)
+        });
+      } else {
+        throw new Error(logsResponse.message || 'Failed to fetch execution logs');
+      }
+    } catch (err) {
+      console.error('Error fetching logs:', err);
+      setError(err.message);
+      setLogs([]);
+      setJobs([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredLogs = logs.filter(log => {
-    const matchesSearch = log.jobName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         log.url.toLowerCase().includes(searchTerm.toLowerCase());
+    const jobName = log.job_name || 'Unknown Job';
+    const jobUrl = log.job_url || '';
+    
+    const matchesSearch = jobName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         jobUrl.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || log.status === statusFilter;
-    const matchesJob = jobFilter === 'all' || log.jobId.toString() === jobFilter;
+    const matchesJob = jobFilter === 'all' || log.job_id.toString() === jobFilter;
     return matchesSearch && matchesStatus && matchesJob;
   });
 
@@ -162,10 +110,12 @@ const LogsPage = () => {
   };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleString();
   };
 
   const formatDuration = (ms) => {
+    if (!ms) return 'N/A';
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(2)}s`;
   };
@@ -175,6 +125,8 @@ const LogsPage = () => {
       case 'success': return <CheckCircle className="w-4 h-4 text-emerald-600" />;
       case 'failed': return <XCircle className="w-4 h-4 text-red-600" />;
       case 'running': return <Clock className="w-4 h-4 text-blue-600 animate-spin" />;
+      case 'timeout': return <AlertCircle className="w-4 h-4 text-orange-600" />;
+      case 'cancelled': return <XCircle className="w-4 h-4 text-gray-600" />;
       default: return <AlertCircle className="w-4 h-4 text-gray-600" />;
     }
   };
@@ -184,11 +136,14 @@ const LogsPage = () => {
       case 'success': return 'text-emerald-700 bg-emerald-50 border-emerald-200 shadow-emerald-100';
       case 'failed': return 'text-red-700 bg-red-50 border-red-200 shadow-red-100';
       case 'running': return 'text-blue-700 bg-blue-50 border-blue-200 shadow-blue-100';
+      case 'timeout': return 'text-orange-700 bg-orange-50 border-orange-200 shadow-orange-100';
+      case 'cancelled': return 'text-gray-700 bg-gray-50 border-gray-200 shadow-gray-100';
       default: return 'text-gray-700 bg-gray-50 border-gray-200 shadow-gray-100';
     }
   };
 
   const getResponseCodeColor = (code) => {
+    if (!code) return 'text-gray-700 bg-gray-100 border-gray-200';
     if (code >= 200 && code < 300) return 'text-emerald-700 bg-emerald-100 border-emerald-200';
     if (code >= 300 && code < 400) return 'text-blue-700 bg-blue-100 border-blue-200';
     if (code >= 400 && code < 500) return 'text-amber-700 bg-amber-100 border-amber-200';
@@ -208,13 +163,60 @@ const LogsPage = () => {
   };
 
   const formatJson = (jsonString) => {
+    if (!jsonString) return 'No response body';
     try {
-      const parsed = JSON.parse(jsonString || '{}');
+      const parsed = JSON.parse(jsonString);
       return JSON.stringify(parsed, null, 2);
     } catch {
-      return jsonString || 'No response body';
+      return jsonString;
     }
   };
+
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setJobFilter('all');
+  };
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen py-8 px-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-6 h-6 animate-spin text-purple-600" />
+              <span className="text-lg text-gray-600">Loading execution logs...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen py-8 px-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="card p-16 text-center border-0 shadow-lg">
+            <div className="p-4 rounded-full bg-red-100 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+              <AlertCircle className="w-8 h-8 text-red-600" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Logs</h3>
+            <p className="text-gray-500 mb-6">{error}</p>
+            <button 
+              onClick={fetchData}
+              className="btn-primary px-6 py-3 rounded-xl font-semibold flex items-center gap-2 mx-auto"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen py-8 px-4">
@@ -238,8 +240,12 @@ const LogsPage = () => {
               <Download className="w-4 h-4" />
               Export Logs
             </button>
-            <button className="btn-secondary px-6 py-3 rounded-xl flex items-center gap-2 font-medium">
-              <RefreshCw className="w-4 h-4" />
+            <button 
+              onClick={fetchData}
+              disabled={loading}
+              className="btn-secondary px-6 py-3 rounded-xl flex items-center gap-2 font-medium disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
           </div>
@@ -251,7 +257,7 @@ const LogsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Total Executions</p>
-                <p className="text-3xl font-bold text-gray-900">{logs.length}</p>
+                <p className="text-3xl font-bold text-gray-900">{stats.total}</p>
               </div>
               <div className="p-3 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 shadow-lg">
                 <Activity className="w-6 h-6 text-white" />
@@ -263,9 +269,7 @@ const LogsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Successful</p>
-                <p className="text-3xl font-bold text-emerald-600">
-                  {logs.filter(log => log.status === 'success').length}
-                </p>
+                <p className="text-3xl font-bold text-emerald-600">{stats.successful}</p>
               </div>
               <div className="p-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-lg">
                 <CheckCircle className="w-6 h-6 text-white" />
@@ -277,9 +281,7 @@ const LogsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Failed</p>
-                <p className="text-3xl font-bold text-red-600">
-                  {logs.filter(log => log.status === 'failed').length}
-                </p>
+                <p className="text-3xl font-bold text-red-600">{stats.failed}</p>
               </div>
               <div className="p-3 rounded-xl bg-gradient-to-r from-red-500 to-red-600 shadow-lg">
                 <XCircle className="w-6 h-6 text-white" />
@@ -291,9 +293,7 @@ const LogsPage = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 uppercase tracking-wide">Avg Response</p>
-                <p className="text-3xl font-bold text-blue-600">
-                  {formatDuration(logs.reduce((sum, log) => sum + log.duration, 0) / logs.length)}
-                </p>
+                <p className="text-3xl font-bold text-blue-600">{formatDuration(stats.avgDuration)}</p>
               </div>
               <div className="p-3 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 shadow-lg">
                 <Timer className="w-6 h-6 text-white" />
@@ -302,248 +302,293 @@ const LogsPage = () => {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="card border-0 shadow-lg mb-8">
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Search */}
-              <div className="relative">
-                <Search className="w-5 h-5 absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search logs..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
-                />
-              </div>
+        {/* Show filters only if there are logs */}
+        {logs.length > 0 && (
+          <div className="card border-0 shadow-lg mb-8">
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="w-5 h-5 absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search logs..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  />
+                </div>
 
-              {/* Job Filter */}
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-gray-400" />
-                <select
-                  value={jobFilter}
-                  onChange={(e) => setJobFilter(e.target.value)}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
-                >
-                  <option value="all">All Jobs</option>
-                  {jobs.map(job => (
-                    <option key={job.id} value={job.id.toString()}>{job.name}</option>
-                  ))}
-                </select>
-              </div>
+                {/* Job Filter */}
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-gray-400" />
+                  <select
+                    value={jobFilter}
+                    onChange={(e) => setJobFilter(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  >
+                    <option value="all">All Jobs</option>
+                    {jobs.map(job => (
+                      <option key={job.id} value={job.id.toString()}>{job.name}</option>
+                    ))}
+                  </select>
+                </div>
 
-              {/* Status Filter */}
-              <div>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
-                >
-                  <option value="all">All Status</option>
-                  <option value="success">Success</option>
-                  <option value="failed">Failed</option>
-                  <option value="running">Running</option>
-                </select>
-              </div>
+                {/* Status Filter */}
+                <div>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="success">Success</option>
+                    <option value="failed">Failed</option>
+                    <option value="running">Running</option>
+                    <option value="timeout">Timeout</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
 
-              {/* Date Range */}
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-gray-400" />
-                <input
-                  type="date"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
-                />
+                {/* Date Range */}
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-gray-400" />
+                  <input
+                    type="date"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                  />
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Logs List */}
-        <div className="space-y-4">
-          {filteredLogs.map((log) => (
-            <div key={log.id} className="card border-0 shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 group">
-              {/* Log Header */}
-              <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-gray-100/50">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <button
-                      onClick={() => toggleLogExpansion(log.id)}
-                      className="p-2 hover:bg-white rounded-xl transition-colors shadow-sm border border-gray-200 group-hover:border-gray-300"
-                    >
-                      {expandedLogs.includes(log.id) ? (
-                        <ChevronDown className="w-4 h-4 text-gray-600" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-gray-600" />
-                      )}
-                    </button>
-                    
-                    <div className="flex items-center gap-3">
-                      {getStatusIcon(log.status)}
-                      <div className="p-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600">
-                        <Globe className="w-4 h-4 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">
-                          {log.jobName}
-                        </h3>
-                        <p className="text-sm text-gray-500 font-mono">{log.method} {log.url}</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(log.status)}`}>
-                      {log.status}
-                    </span>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getMethodColor(log.method)}`}>
-                      {log.method}
-                    </span>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${getResponseCodeColor(log.responseCode)}`}>
-                      {log.responseCode}
-                    </span>
-                    <div className="text-right">
-                      <div className="text-sm font-medium text-gray-900">{formatDate(log.executedAt)}</div>
-                      <div className="text-xs text-gray-500 flex items-center gap-1">
-                        <Timer className="w-3 h-3" />
-                        {formatDuration(log.duration)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+        {logs.length === 0 ? (
+          // Empty state for new users
+          <div className="card p-16 text-center border-0 shadow-lg">
+            <div className="p-4 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+              <Zap className="w-10 h-10 text-purple-500" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No execution logs yet</h3>
+            <p className="text-gray-500 mb-6">Create and run some cron jobs to see execution logs here</p>
+            <div className="flex justify-center gap-3">
+              <button 
+                onClick={() => navigate('/create')}
+                className="btn-primary px-6 py-3 rounded-xl font-medium"
+              >
+                Create Your First Job
+              </button>
+              <button className="btn-secondary px-6 py-3 rounded-xl font-medium">
+                View Documentation
+              </button>
+            </div>
+          </div>
+        ) : filteredLogs.length === 0 ? (
+          // No results state
+          <div className="card p-16 text-center border-0 shadow-lg">
+            <div className="p-4 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 w-20 h-20 mx-auto mb-4 flex items-center justify-center">
+              <Zap className="w-10 h-10 text-purple-500" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No execution logs found</h3>
+            <p className="text-gray-500 mb-6">Try adjusting your filters or wait for jobs to execute</p>
+            <div className="flex justify-center gap-3">
+              <button 
+                onClick={handleClearFilters}
+                className="btn-secondary px-6 py-3 rounded-xl font-medium"
+              >
+                Clear Filters
+              </button>
+              <button 
+                onClick={fetchData}
+                className="btn-primary px-6 py-3 rounded-xl font-medium"
+              >
+                Refresh Logs
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredLogs.map((log) => {
+              const jobName = log.job_name || 'Unknown Job';
+              const jobUrl = log.job_url || '';
+              const jobMethod = log.job_method || 'GET';
 
-                {log.errorMessage && (
-                  <div className="mt-4 p-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl">
-                    <div className="flex items-start gap-3">
-                      <div className="p-1.5 bg-red-500 rounded-lg shadow-sm">
-                        <AlertCircle className="w-4 h-4 text-white" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-red-900">Error Details</p>
-                        <p className="text-sm text-red-800 mt-1">{log.errorMessage}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Expanded Details */}
-              {expandedLogs.includes(log.id) && (
-                <div className="p-6 bg-gradient-to-r from-gray-50/50 to-blue-50/30 space-y-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Request Details */}
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                        <div className="p-1.5 bg-blue-500 rounded-lg">
-                          <Globe className="w-4 h-4 text-white" />
-                        </div>
-                        Request Details
-                      </h4>
-                      <div className="card p-4 border border-gray-200 space-y-3">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="font-medium text-gray-600">Method:</span>
-                            <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getMethodColor(log.method)}`}>
-                              {log.method}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">Status:</span>
-                            <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getResponseCodeColor(log.responseCode)}`}>
-                              {log.responseCode}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">Duration:</span>
-                            <span className="ml-2 text-gray-900 font-mono">{formatDuration(log.duration)}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">Trigger:</span>
-                            <span className="ml-2 text-gray-900 capitalize">{log.triggeredBy}</span>
-                          </div>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-600">URL:</span>
-                          <div className="mt-1 p-2 bg-gray-100 rounded-lg font-mono text-xs break-all">{log.url}</div>
-                        </div>
-                        <div>
-                          <span className="font-medium text-gray-600">Executed:</span>
-                          <div className="text-gray-900 font-mono text-sm">{formatDate(log.executedAt)}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Response Headers */}
-                    <div>
-                      <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                        <div className="p-1.5 bg-emerald-500 rounded-lg">
-                          <Activity className="w-4 h-4 text-white" />
-                        </div>
-                        Response Headers
-                      </h4>
-                      <div className="card p-4 border border-gray-200">
-                        <div className="space-y-2">
-                          {Object.entries(log.responseHeaders).map(([key, value]) => (
-                            <div key={key} className="flex justify-between items-center py-1 border-b border-gray-100 last:border-b-0">
-                              <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">{key}:</span>
-                              <span className="text-sm text-gray-900 font-mono">{value}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Response Body */}
-                  {log.responseBody && (
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-semibold text-gray-900 flex items-center gap-2">
-                          <div className="p-1.5 bg-purple-500 rounded-lg">
-                            <Eye className="w-4 h-4 text-white" />
-                          </div>
-                          Response Body
-                        </h4>
-                        <button className="text-purple-600 hover:text-purple-700 text-sm flex items-center gap-1 font-medium">
-                          <ExternalLink className="w-3 h-3" />
-                          View Raw
+              return (
+                <div key={log.id} className="card border-0 shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 group">
+                  {/* Log Header */}
+                  <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-gray-100/50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <button
+                          onClick={() => toggleLogExpansion(log.id)}
+                          className="p-2 hover:bg-white rounded-xl transition-colors shadow-sm border border-gray-200 group-hover:border-gray-300"
+                        >
+                          {expandedLogs.includes(log.id) ? (
+                            <ChevronDown className="w-4 h-4 text-gray-600" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-gray-600" />
+                          )}
                         </button>
-                      </div>
-                      <div className="relative">
-                        <div className="absolute top-4 right-4 flex gap-2">
-                          <span className="text-xs text-emerald-400 bg-gray-800 px-2 py-1 rounded">JSON</span>
+                        
+                        <div className="flex items-center gap-3">
+                          {getStatusIcon(log.status)}
+                          <div className="p-2 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600">
+                            <Globe className="w-4 h-4 text-white" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">
+                              {jobName}
+                            </h3>
+                            <p className="text-sm text-gray-500 font-mono">{jobMethod} {jobUrl}</p>
+                          </div>
                         </div>
-                        <div className="bg-gray-900 rounded-xl p-6 overflow-x-auto border border-gray-700">
-                          <pre className="text-emerald-400 text-sm font-mono whitespace-pre-wrap">
-                            {formatJson(log.responseBody)}
-                          </pre>
+                      </div>
+                      
+                      <div className="flex items-center gap-3">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(log.status)}`}>
+                          {log.status}
+                        </span>
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getMethodColor(jobMethod)}`}>
+                          {jobMethod}
+                        </span>
+                        {log.response_code && (
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${getResponseCodeColor(log.response_code)}`}>
+                            {log.response_code}
+                          </span>
+                        )}
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-gray-900">{formatDate(log.executed_at)}</div>
+                          <div className="text-xs text-gray-500 flex items-center gap-1">
+                            <Timer className="w-3 h-3" />
+                            {formatDuration(log.duration)}
+                          </div>
                         </div>
                       </div>
+                    </div>
+
+                    {log.error_message && (
+                      <div className="mt-4 p-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl">
+                        <div className="flex items-start gap-3">
+                          <div className="p-1.5 bg-red-500 rounded-lg shadow-sm">
+                            <AlertCircle className="w-4 h-4 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-red-900">Error Details</p>
+                            <p className="text-sm text-red-800 mt-1">{log.error_message}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expanded Details */}
+                  {expandedLogs.includes(log.id) && (
+                    <div className="p-6 bg-gradient-to-r from-gray-50/50 to-blue-50/30 space-y-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Request Details */}
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                            <div className="p-1.5 bg-blue-500 rounded-lg">
+                              <Globe className="w-4 h-4 text-white" />
+                            </div>
+                            Request Details
+                          </h4>
+                          <div className="card p-4 border border-gray-200 space-y-3">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="font-medium text-gray-600">Method:</span>
+                                <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getMethodColor(jobMethod)}`}>
+                                  {jobMethod}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-600">Status:</span>
+                                {log.response_code && (
+                                  <span className={`ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getResponseCodeColor(log.response_code)}`}>
+                                    {log.response_code}
+                                  </span>
+                                )}
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-600">Duration:</span>
+                                <span className="ml-2 text-gray-900 font-mono">{formatDuration(log.duration)}</span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-600">Trigger:</span>
+                                <span className="ml-2 text-gray-900 capitalize">{log.triggered_by}</span>
+                              </div>
+                            </div>
+                            <div>
+                              <span className="font-medium text-gray-600">URL:</span>
+                              <div className="mt-1 p-2 bg-gray-100 rounded-lg font-mono text-xs break-all">{jobUrl}</div>
+                            </div>
+                            <div>
+                              <span className="font-medium text-gray-600">Executed:</span>
+                              <div className="text-gray-900 font-mono text-sm">{formatDate(log.executed_at)}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Response Headers */}
+                        <div>
+                          <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                            <div className="p-1.5 bg-emerald-500 rounded-lg">
+                              <Activity className="w-4 h-4 text-white" />
+                            </div>
+                            Response Headers
+                          </h4>
+                          <div className="card p-4 border border-gray-200">
+                            <div className="space-y-2">
+                              {log.response_headers && typeof log.response_headers === 'object' ? (
+                                Object.entries(log.response_headers).map(([key, value]) => (
+                                  <div key={key} className="flex justify-between items-center py-1 border-b border-gray-100 last:border-b-0">
+                                    <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">{key}:</span>
+                                    <span className="text-sm text-gray-900 font-mono">{value}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-sm text-gray-500">No response headers available</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Response Body */}
+                      {log.response_body && (
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                              <div className="p-1.5 bg-purple-500 rounded-lg">
+                                <Eye className="w-4 h-4 text-white" />
+                              </div>
+                              Response Body
+                            </h4>
+                            <button className="text-purple-600 hover:text-purple-700 text-sm flex items-center gap-1 font-medium">
+                              <ExternalLink className="w-3 h-3" />
+                              View Raw
+                            </button>
+                          </div>
+                          <div className="relative">
+                            <div className="absolute top-4 right-4 flex gap-2">
+                              <span className="text-xs text-emerald-400 bg-gray-800 px-2 py-1 rounded">JSON</span>
+                            </div>
+                            <div className="bg-gray-900 rounded-xl p-6 overflow-x-auto border border-gray-700">
+                              <pre className="text-emerald-400 text-sm font-mono whitespace-pre-wrap">
+                                {formatJson(log.response_body)}
+                              </pre>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          ))}
-
-          {filteredLogs.length === 0 && (
-            <div className="card p-16 text-center border-0 shadow-lg">
-              <div className="p-4 rounded-full bg-gradient-to-r from-purple-100 to-pink-100 w-20 h-20 mx-auto mb-4 flex items-center justify-center">
-                <Zap className="w-10 h-10 text-purple-500" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">No execution logs found</h3>
-              <p className="text-gray-500 mb-6">Try adjusting your filters or wait for jobs to execute</p>
-              <div className="flex justify-center gap-3">
-                <button className="btn-secondary px-6 py-3 rounded-xl font-medium">
-                  Clear Filters
-                </button>
-                <button className="btn-primary px-6 py-3 rounded-xl font-medium">
-                  View All Logs
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Pagination */}
         {filteredLogs.length > 0 && (

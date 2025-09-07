@@ -121,10 +121,86 @@ export const jobsAPI = {
     return apiRequest(`/api/jobs/${id}/logs?${searchParams}`);
   },
 
-  // Get all executions (for logs page)
+  // Get all executions (for logs page) - fetch from all user jobs
   getAllExecutions: async (params = {}) => {
-    const searchParams = new URLSearchParams(params);
-    return apiRequest(`/api/jobs/executions?${searchParams}`);
+    try {
+      // First get all jobs for the user
+      const jobsResponse = await apiRequest('/api/jobs');
+      
+      if (!jobsResponse.success || !jobsResponse.data?.jobs?.length) {
+        return { 
+          success: true, 
+          data: { 
+            executions: [],
+            total: 0,
+            page: 1,
+            limit: 50
+          } 
+        };
+      }
+      
+      const allExecutions = [];
+      const searchParams = new URLSearchParams(params);
+      
+      // Get logs for each job
+      for (const job of jobsResponse.data.jobs) {
+        try {
+          const logsResponse = await apiRequest(`/api/jobs/${job.id}/logs?${searchParams}`);
+          
+          if (logsResponse.success && logsResponse.data?.executions) {
+            // Add job information to each execution for easier display
+            const executionsWithJobInfo = logsResponse.data.executions.map(execution => ({
+              ...execution,
+              job_name: job.name,
+              job_url: job.url,
+              job_method: job.method
+            }));
+            
+            allExecutions.push(...executionsWithJobInfo);
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch logs for job ${job.id} (${job.name}):`, error);
+          // Continue with other jobs even if one fails
+        }
+      }
+      
+      // Sort by execution date (newest first)
+      allExecutions.sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at));
+      
+      // Apply any filtering if specified in params
+      let filteredExecutions = allExecutions;
+      
+      // Filter by status if specified
+      if (params.status && params.status !== 'all') {
+        filteredExecutions = filteredExecutions.filter(exec => exec.status === params.status);
+      }
+      
+      // Filter by job if specified
+      if (params.jobId && params.jobId !== 'all') {
+        filteredExecutions = filteredExecutions.filter(exec => exec.job_id.toString() === params.jobId);
+      }
+      
+      // Apply pagination if specified
+      const page = parseInt(params.page) || 1;
+      const limit = parseInt(params.limit) || 50;
+      const offset = (page - 1) * limit;
+      const paginatedExecutions = filteredExecutions.slice(offset, offset + limit);
+      
+      return { 
+        success: true, 
+        data: { 
+          executions: paginatedExecutions,
+          total: filteredExecutions.length,
+          page: page,
+          limit: limit,
+          totalPages: Math.ceil(filteredExecutions.length / limit)
+        } 
+      };
+      
+    } catch (error) {
+      console.error('Failed to fetch all executions:', error);
+      throw new Error(`Failed to fetch execution logs: ${error.message}`);
+    }
   }
 };
 
