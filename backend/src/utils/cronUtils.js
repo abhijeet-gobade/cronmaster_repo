@@ -1,5 +1,13 @@
 const logger = require('./logger');
-const parser = require('cron-parser');
+
+// Try different import methods for cron-parser
+let cronParser;
+try {
+  cronParser = require('cron-parser');
+} catch (error) {
+  logger.error('Failed to import cron-parser:', error);
+  cronParser = null;
+}
 
 /**
  * Validate cron expression using cron-parser
@@ -8,8 +16,12 @@ const parser = require('cron-parser');
  */
 const validateCronExpression = (cronExpression) => {
   try {
+    if (!cronParser) {
+      return { isValid: false, error: 'cron-parser not available' };
+    }
+    
     // Use cron-parser to validate
-    parser.parseExpression(cronExpression);
+    cronParser.parseExpression(cronExpression);
     return { isValid: true };
   } catch (error) {
     return {
@@ -27,7 +39,12 @@ const validateCronExpression = (cronExpression) => {
  */
 const getNextExecutionTime = (cronExpression, timezone = 'UTC') => {
   try {
-    const interval = parser.parseExpression(cronExpression, {
+    if (!cronParser) {
+      logger.error('cron-parser not available, using fallback calculation');
+      return getFallbackNextExecution(cronExpression);
+    }
+
+    const interval = cronParser.parseExpression(cronExpression, {
       tz: timezone,
       currentDate: new Date()
     });
@@ -43,7 +60,51 @@ const getNextExecutionTime = (cronExpression, timezone = 'UTC') => {
       error: error.message
     });
     
-    // Return a safe default (5 minutes from now)
+    // Use fallback calculation
+    return getFallbackNextExecution(cronExpression);
+  }
+};
+
+/**
+ * Fallback next execution calculation for basic patterns
+ */
+const getFallbackNextExecution = (cronExpression) => {
+  const now = new Date();
+  const next = new Date(now);
+  next.setSeconds(0, 0);
+
+  try {
+    // Handle basic patterns
+    if (cronExpression === '* * * * *') {
+      next.setMinutes(next.getMinutes() + 1);
+      return next;
+    }
+
+    if (cronExpression.startsWith('*/') && cronExpression.endsWith(' * * * *')) {
+      const interval = parseInt(cronExpression.split(' ')[0].split('/')[1]);
+      const currentMinute = next.getMinutes();
+      const nextMinute = Math.ceil((currentMinute + 1) / interval) * interval;
+      
+      if (nextMinute >= 60) {
+        next.setHours(next.getHours() + Math.floor(nextMinute / 60));
+        next.setMinutes(nextMinute % 60);
+      } else {
+        next.setMinutes(nextMinute);
+      }
+      return next;
+    }
+
+    if (cronExpression.startsWith('0 ') && cronExpression.endsWith(' * * *')) {
+      next.setMinutes(0);
+      next.setHours(next.getHours() + 1);
+      return next;
+    }
+
+    // Default fallback
+    next.setMinutes(next.getMinutes() + 5);
+    return next;
+  } catch (error) {
+    logger.error('Fallback calculation failed:', error);
     const fallback = new Date();
     fallback.setMinutes(fallback.getMinutes() + 5);
     return fallback;
@@ -211,7 +272,11 @@ const formatDayOfWeekRange = (range) => {
  */
 const getNextExecutions = (cronExpression, timezone = 'UTC', count = 5) => {
   try {
-    const interval = parser.parseExpression(cronExpression, {
+    if (!cronParser) {
+      return [getFallbackNextExecution(cronExpression)];
+    }
+
+    const interval = cronParser.parseExpression(cronExpression, {
       tz: timezone,
       currentDate: new Date()
     });
@@ -224,7 +289,7 @@ const getNextExecutions = (cronExpression, timezone = 'UTC', count = 5) => {
     return executions;
   } catch (error) {
     logger.error('Error getting next executions:', error);
-    return [];
+    return [getFallbackNextExecution(cronExpression)];
   }
 };
 
