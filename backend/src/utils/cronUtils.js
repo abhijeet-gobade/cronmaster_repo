@@ -348,4 +348,4 @@ module.exports = {
   formatHour,
   formatMonth,
   formatDayOfWeek
-};
+}; 
