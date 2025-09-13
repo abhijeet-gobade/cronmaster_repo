@@ -272,11 +272,11 @@ const formatDayOfWeekRange = (range) => {
  */
 const getNextExecutions = (cronExpression, timezone = 'UTC', count = 5) => {
   try {
-    if (!cronParser) {
+    if (!parseExpression) {
       return [getFallbackNextExecution(cronExpression)];
     }
 
-    const interval = cronParser.parseExpression(cronExpression, {
+    const interval = parseExpression(cronExpression, {
       tz: timezone,
       currentDate: new Date()
     });
@@ -348,4 +348,4 @@ module.exports = {
   formatHour,
   formatMonth,
   formatDayOfWeek
-}; 
+};
