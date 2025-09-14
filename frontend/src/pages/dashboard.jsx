@@ -203,11 +203,13 @@ const Dashboard = () => {
                 ))}
               </div>
             ) : (
-              <div className="card p-8 border-0">
+              <div className="card p-8 border-0 bg-white rounded-xl shadow-sm">
                 <EmptyState 
                   icon={Timer} 
                   title="No job executions yet"
                   description="Your jobs will appear here once they start running"
+                  actionText="Create Your First Job"
+                  onAction={() => window.location.href = '/create'}
                 />
               </div>
             )}
