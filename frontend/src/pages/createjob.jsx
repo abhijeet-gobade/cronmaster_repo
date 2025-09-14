@@ -1,380 +1,418 @@
-import React, { useState } from 'react';
-import { Clock, Globe, Calendar, Play, Eye, Sparkles, Zap, CheckCircle, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { 
+  Clock, 
+  Globe, 
+  Calendar, 
+  CheckCircle, 
+  Play, 
+  ArrowLeft,
+  AlertCircle,
+  Info
+} from 'lucide-react';
+import { jobsAPI } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 
-// Move FormField outside the main component to prevent re-creation
-const FormField = ({ label, children, required = false, error = null, icon = null }) => (
-  <div className="space-y-2">
-    <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
-      {icon && <span className="text-blue-600">{icon}</span>}
-      {label}
-      {required && <span className="text-red-500">*</span>}
-    </label>
-    {children}
-    {error && (
-      <div className="flex items-center gap-2 text-sm text-red-600">
-        <AlertCircle className="w-4 h-4" />
-        {error}
-      </div>
-    )}
-  </div>
-);
-
-const CreateJobPage = () => {
+const CreateJob = () => {
   const [jobData, setJobData] = useState({
     name: '',
     url: '',
     method: 'GET',
-    cronExpression: '0 0 * * *',
+    cronExpression: '0 9 * * *',
     timezone: 'UTC',
+    headers: {},
+    body: '',
     description: ''
   });
-
-  const [isValidUrl, setIsValidUrl] = useState(true);
-  const [isValidCron, setIsValidCron] = useState(true);
+  
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   const cronPresets = [
-    { label: 'Every minute', value: '* * * * *', description: 'Runs every minute' },
-    { label: 'Every 5 minutes', value: '*/5 * * * *', description: 'Runs every 5 minutes' },
-    { label: 'Every hour', value: '0 * * * *', description: 'Runs at the start of every hour' },
-    { label: 'Daily at midnight', value: '0 0 * * *', description: 'Runs once daily at 12:00 AM' },
-    { label: 'Daily at 9 AM', value: '0 9 * * *', description: 'Runs once daily at 9:00 AM' },
-    { label: 'Weekly (Sunday)', value: '0 0 * * 0', description: 'Runs every Sunday at midnight' },
-    { label: 'Monthly (1st)', value: '0 0 1 * *', description: 'Runs on the 1st of every month' }
+    { label: 'Every 5 minutes', value: '*/5 * * * *', description: 'Every 5 minutes' },
+    { label: 'Every 15 minutes', value: '*/15 * * * *', description: 'Every 15 minutes' },
+    { label: 'Every 30 minutes', value: '*/30 * * * *', description: 'Every 30 minutes' },
+    { label: 'Every hour', value: '0 * * * *', description: 'At the start of every hour' },
+    { label: 'Every 6 hours', value: '0 */6 * * *', description: 'Every 6 hours' },
+    { label: 'Daily at 9 AM', value: '0 9 * * *', description: 'Once daily at 9:00 AM' },
+    { label: 'Daily at noon', value: '0 12 * * *', description: 'Once daily at 12:00 PM' },
+    { label: 'Daily at 6 PM', value: '0 18 * * *', description: 'Once daily at 6:00 PM' },
+    { label: 'Weekdays at 9 AM', value: '0 9 * * 1-5', description: 'Monday to Friday at 9:00 AM' },
+    { label: 'Weekly on Sunday', value: '0 0 * * 0', description: 'Every Sunday at midnight' },
+    { label: 'Monthly on 1st', value: '0 0 1 * *', description: 'On the 1st of every month' }
   ];
 
-  // Combine all change handlers into one to reduce re-renders
+  const timezones = [
+    'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+    'Europe/London', 'Europe/Berlin', 'Europe/Paris', 'Asia/Tokyo', 'Asia/Shanghai',
+    'Asia/Kolkata', 'Australia/Sydney', 'Pacific/Auckland'
+  ];
+
   const handleInputChange = (field, value) => {
-    setJobData(prev => ({ ...prev, [field]: value }));
+    setJobData(prev => ({
+      ...prev,
+      [field]: value
+    }));
     
-    // Handle specific field validations
-    if (field === 'url') {
-      if (value) {
-        try {
-          new URL(value);
-          setIsValidUrl(true);
-        } catch {
-          setIsValidUrl(value.startsWith('http'));
-        }
-      } else {
-        setIsValidUrl(true);
-      }
-    }
-    
-    if (field === 'cronExpression') {
-      setIsValidCron(value.split(' ').length === 5);
+    if (error) setError(null);
+  };
+
+  const handlePresetClick = (cronValue) => {
+    setJobData(prev => ({
+      ...prev,
+      cronExpression: cronValue
+    }));
+  };
+
+  const parseCronExpression = (expression) => {
+    const preset = cronPresets.find(p => p.value === expression);
+    return preset ? preset.description : expression;
+  };
+
+  const isValidUrl = (url) => {
+    try {
+      new URL(url);
+      return url.startsWith('http://') || url.startsWith('https://');
+    } catch {
+      return false;
     }
   };
 
-  const handlePresetClick = (presetValue) => {
-    setJobData(prev => ({ ...prev, cronExpression: presetValue }));
-    setIsValidCron(true);
-  };
-
-  const parseCronExpression = (cron) => {
-    const parts = cron.split(' ');
-    if (parts.length !== 5) return 'Invalid cron expression';
-    
-    const preset = cronPresets.find(p => p.value === cron);
-    if (preset) return preset.description;
-    
-    const [minute, hour, day, month, dayOfWeek] = parts;
-    
-    let description = 'At ';
-    if (minute === '*' && hour === '*') return 'Every minute';
-    if (minute === '0' && hour === '*') return 'Every hour';
-    
-    if (hour !== '*') {
-      description += `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
-    } else {
-      description += `minute ${minute}`;
+  const validateForm = () => {
+    if (!jobData.name.trim()) {
+      return 'Job name is required';
     }
-    
-    if (day !== '*') description += ` on day ${day}`;
-    if (month !== '*') description += ` in month ${month}`;
-    if (dayOfWeek !== '*') description += ` on day ${dayOfWeek} of week`;
-    
-    return description;
+    if (!jobData.url.trim()) {
+      return 'URL is required';
+    }
+    if (!isValidUrl(jobData.url)) {
+      return 'Please enter a valid URL starting with http:// or https://';
+    }
+    if (!jobData.cronExpression.trim()) {
+      return 'Cron expression is required';
+    }
+    return null;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
     try {
-      const response = await fetch('http://localhost:3001/api/jobs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('cronmaster_access_token')}`
-        },
-        body: JSON.stringify({
-          name: jobData.name,
-          url: jobData.url,
-          method: jobData.method,
-          cronExpression: jobData.cronExpression,
-          timezone: jobData.timezone,
-          description: jobData.description
-        })
+      const response = await jobsAPI.createJob({
+        name: jobData.name.trim(),
+        url: jobData.url.trim(),
+        method: jobData.method,
+        cronExpression: jobData.cronExpression.trim(),
+        timezone: jobData.timezone,
+        headers: jobData.headers,
+        body: jobData.body || null,
+        description: jobData.description.trim() || null
       });
 
-      if (response.ok) {
-        alert('Job created successfully!');
-        // Reset form
-        setJobData({
-          name: '',
-          url: '',
-          method: 'GET',
-          cronExpression: '0 0 * * *',
-          timezone: 'UTC',
-          description: ''
-        });
-        setIsValidUrl(true);
-        setIsValidCron(true);
-      } else {
-        const error = await response.json();
-        alert(`Error: ${error.message || 'Failed to create job'}`);
+      if (response.success) {
+        navigate('/jobs');
       }
-    } catch (error) {
-      console.error('Error creating job:', error);
-      alert('Failed to create job. Please try again.');
+    } catch (err) {
+      setError(err.message || 'Failed to create job');
+    } finally {
+      setLoading(false);
     }
   };
 
+  const FormField = ({ label, required, children, error, help }) => (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-900">
+        {label}
+        {required && <span className="text-red-500 ml-1">*</span>}
+      </label>
+      {children}
+      {help && (
+        <div className="flex items-start gap-2 text-sm text-gray-600">
+          <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>{help}</span>
+        </div>
+      )}
+      {error && (
+        <div className="flex items-start gap-2 text-sm text-red-600">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <div className="min-h-screen py-8 px-4">
+    <div className="py-6 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-8 slide-up">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 shadow-lg">
-              <Clock className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Create New Cron Job
-            </h1>
-            <Sparkles className="w-6 h-6 text-purple-400 animate-pulse" />
-          </div>
-          <p className="text-gray-600 text-lg">Schedule a URL to be called automatically with precision</p>
+        <div className="mb-8">
+          <button
+            onClick={() => navigate('/jobs')}
+            className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Jobs
+          </button>
+          <h1 className="text-2xl font-bold text-gray-900">Create New Cron Job</h1>
+          <p className="text-gray-600 mt-1">Schedule a URL to be called automatically with precision</p>
         </div>
 
-        <div className="card border-0 shadow-xl overflow-hidden">
-          {/* Form Header */}
-          <div className="px-8 py-6 bg-gradient-to-r from-blue-50 to-purple-50 border-b border-blue-100">
-            <div className="flex items-center gap-3">
-              <Zap className="w-6 h-6 text-blue-600" />
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Job Configuration</h2>
-                <p className="text-gray-600">Fill in the details to create your scheduled job</p>
-              </div>
-            </div>
+        {/* Form */}
+        <div className="bg-white rounded-lg border border-gray-200">
+          <div className="p-6 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Job Configuration</h2>
+            <p className="text-gray-600 mt-1">Fill in the details to create your scheduled job</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-8">
-            <div className="space-y-8">
-              {/* Basic Information */}
+          <form onSubmit={handleSubmit} className="p-6 space-y-8">
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="text-sm font-medium text-red-800">Error</h3>
+                    <p className="text-sm text-red-700 mt-1">{error}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Basic Information */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField 
+                label="Job Name" 
+                required
+                help="A descriptive name for your job"
+              >
+                <input
+                  type="text"
+                  value={jobData.name}
+                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="My API Health Check"
+                  required
+                />
+              </FormField>
+
+              <FormField label="HTTP Method">
+                <select
+                  value={jobData.method}
+                  onChange={(e) => handleInputChange('method', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="DELETE">DELETE</option>
+                  <option value="PATCH">PATCH</option>
+                </select>
+              </FormField>
+            </div>
+
+            {/* URL Field */}
+            <FormField 
+              label="Target URL" 
+              required
+              help="The URL that will be called when the job executes"
+              error={jobData.url && !isValidUrl(jobData.url) ? "Please enter a valid URL starting with http:// or https://" : null}
+            >
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
+                  <Globe className="w-4 h-4 text-gray-400" />
+                </div>
+                <input
+                  type="url"
+                  value={jobData.url}
+                  onChange={(e) => handleInputChange('url', e.target.value)}
+                  className={`w-full pl-10 pr-10 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 transition-all ${
+                    jobData.url && isValidUrl(jobData.url) 
+                      ? 'border-green-300 focus:border-green-500' 
+                      : jobData.url 
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500' 
+                        : 'border-gray-300 focus:border-blue-500'
+                  }`}
+                  placeholder="https://api.example.com/webhook"
+                  required
+                />
+                {jobData.url && isValidUrl(jobData.url) && (
+                  <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                    <CheckCircle className="w-4 h-4 text-green-500" />
+                  </div>
+                )}
+              </div>
+            </FormField>
+
+            {/* Schedule Configuration */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Schedule Configuration</h3>
+              </div>
+              
+              {/* Quick Presets */}
+              <FormField label="Quick Presets" help="Click a preset to automatically set the cron expression">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {cronPresets.map((preset) => (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      onClick={() => handlePresetClick(preset.value)}
+                      className={`p-3 text-sm rounded-lg border transition-all text-left ${
+                        jobData.cronExpression === preset.value
+                          ? 'bg-blue-50 border-blue-200 text-blue-900'
+                          : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="font-medium">{preset.label}</div>
+                      <div className="text-xs text-gray-500 mt-1">{preset.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </FormField>
+
+              {/* Cron Expression and Timezone */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField 
-                  label="Job Name" 
-                  required 
-                  icon={<Clock className="w-4 h-4" />}
+                  label="Cron Expression" 
+                  required
+                  help="Custom cron expression (minute hour day month dayOfWeek)"
                 >
                   <input
                     type="text"
-                    value={jobData.name}
-                    onChange={(e) => handleInputChange('name', e.target.value)}
-                    className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                    placeholder="My API Health Check"
+                    value={jobData.cronExpression}
+                    onChange={(e) => handleInputChange('cronExpression', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                    placeholder="0 9 * * *"
                     required
                   />
                 </FormField>
 
-                <FormField label="HTTP Method" icon={<Globe className="w-4 h-4" />}>
+                <FormField label="Timezone">
                   <select
-                    value={jobData.method}
-                    onChange={(e) => handleInputChange('method', e.target.value)}
-                    className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    value={jobData.timezone}
+                    onChange={(e) => handleInputChange('timezone', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PUT">PUT</option>
-                    <option value="DELETE">DELETE</option>
-                    <option value="PATCH">PATCH</option>
+                    {timezones.map(tz => (
+                      <option key={tz} value={tz}>{tz}</option>
+                    ))}
                   </select>
                 </FormField>
               </div>
 
-              {/* URL Field */}
-              <FormField 
-                label="Target URL" 
-                required 
-                icon={<Globe className="w-4 h-4" />}
-                error={!isValidUrl ? "Please enter a valid URL starting with http:// or https://" : null}
-              >
-                <div className="relative">
-                  <input
-                    type="url"
-                    value={jobData.url}
-                    onChange={(e) => handleInputChange('url', e.target.value)}
-                    className={`form-input w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 transition-all ${
-                      isValidUrl ? 'border-gray-300 focus:border-blue-500' : 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                    }`}
-                    placeholder="https://api.example.com/webhook"
-                    required
-                  />
-                  {isValidUrl && jobData.url && (
-                    <CheckCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-emerald-500" />
-                  )}
+              {/* Schedule Preview */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Clock className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-blue-900">Schedule Preview</p>
+                    <p className="text-lg font-semibold text-blue-900 mt-1">
+                      {parseCronExpression(jobData.cronExpression)}
+                    </p>
+                    <p className="text-sm text-blue-700">Timezone: {jobData.timezone}</p>
+                  </div>
                 </div>
-              </FormField>
+              </div>
+            </div>
 
-              {/* Schedule Section */}
+            {/* Request Configuration */}
+            {(jobData.method === 'POST' || jobData.method === 'PUT' || jobData.method === 'PATCH') && (
               <div className="space-y-6">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-blue-600" />
-                  <h3 className="text-lg font-semibold text-gray-900">Schedule Configuration</h3>
-                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Request Configuration</h3>
                 
-                {/* Quick Presets */}
-                <div>
-                  <p className="text-sm font-medium text-gray-700 mb-3">Quick presets:</p>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                    {cronPresets.map((preset) => (
-                      <button
-                        key={preset.value}
-                        type="button"
-                        onClick={() => handlePresetClick(preset.value)}
-                        className={`group p-3 text-sm rounded-xl border transition-all duration-300 text-left ${
-                          jobData.cronExpression === preset.value
-                            ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-blue-300 text-white shadow-lg transform scale-105'
-                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 hover:shadow-md'
-                        }`}
-                      >
-                        <div className="font-medium">{preset.label}</div>
-                        <div className={`text-xs mt-1 ${
-                          jobData.cronExpression === preset.value ? 'text-blue-100' : 'text-gray-500'
-                        }`}>
-                          {preset.description}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Custom Cron Expression */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <FormField 
-                    label="Cron Expression" 
-                    required 
-                    error={!isValidCron ? "Please enter a valid cron expression (5 parts)" : null}
-                  >
-                    <input
-                      type="text"
-                      value={jobData.cronExpression}
-                      onChange={(e) => handleInputChange('cronExpression', e.target.value)}
-                      className={`form-input w-full px-4 py-3 border rounded-xl focus:ring-2 font-mono transition-all ${
-                        isValidCron ? 'border-gray-300 focus:border-blue-500 focus:ring-blue-500' : 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                      }`}
-                      placeholder="0 0 * * *"
-                      required
-                    />
-                  </FormField>
-
-                  <FormField label="Timezone">
-                    <select
-                      value={jobData.timezone}
-                      onChange={(e) => handleInputChange('timezone', e.target.value)}
-                      className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                    >
-                      <option value="UTC">UTC (Coordinated Universal Time)</option>
-                      <option value="America/New_York">Eastern Time (ET)</option>
-                      <option value="America/Chicago">Central Time (CT)</option>
-                      <option value="America/Denver">Mountain Time (MT)</option>
-                      <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                      <option value="Europe/London">London (GMT/BST)</option>
-                      <option value="Europe/Paris">Paris (CET/CEST)</option>
-                      <option value="Asia/Tokyo">Tokyo (JST)</option>
-                      <option value="Asia/Shanghai">Shanghai (CST)</option>
-                    </select>
-                  </FormField>
-                </div>
-
-                {/* Schedule Preview */}
-                <div className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl border border-blue-200">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-500 rounded-lg shadow-sm">
-                      <Eye className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-700">Schedule Preview</p>
-                      <p className="text-lg font-semibold text-gray-900">
-                        {parseCronExpression(jobData.cronExpression)}
-                      </p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Timezone: {jobData.timezone}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Description */}
-              <FormField label="Description (Optional)">
-                <textarea
-                  value={jobData.description}
-                  onChange={(e) => handleInputChange('description', e.target.value)}
-                  className="form-input w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all resize-none"
-                  rows="4"
-                  placeholder="Describe what this job does, its purpose, and any important notes..."
-                />
-              </FormField>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
-                <button
-                  type="submit"
-                  className="btn-primary flex-1 px-8 py-4 rounded-xl font-semibold text-lg flex items-center justify-center gap-3 shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                <FormField 
+                  label="Request Headers (JSON)" 
+                  help="Optional headers to send with the request"
                 >
-                  <Play className="w-5 h-5" />
-                  Create Job
-                  <Sparkles className="w-4 h-4 opacity-75" />
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary px-8 py-4 rounded-xl font-semibold text-lg flex items-center justify-center gap-2"
+                  <textarea
+                    value={typeof jobData.headers === 'string' ? jobData.headers : JSON.stringify(jobData.headers, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        handleInputChange('headers', parsed);
+                      } catch {
+                        handleInputChange('headers', e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                    rows="4"
+                    placeholder='{"Content-Type": "application/json", "Authorization": "Bearer token"}'
+                  />
+                </FormField>
+
+                <FormField 
+                  label="Request Body" 
+                  help="Request body content (JSON, XML, or plain text)"
                 >
-                  Save as Draft
-                </button>
+                  <textarea
+                    value={jobData.body}
+                    onChange={(e) => handleInputChange('body', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                    rows="6"
+                    placeholder='{"message": "Hello from CronMaster", "timestamp": "2024-01-01T00:00:00Z"}'
+                  />
+                </FormField>
               </div>
+            )}
+
+            {/* Description */}
+            <FormField 
+              label="Description" 
+              help="Optional description explaining what this job does"
+            >
+              <textarea
+                value={jobData.description}
+                onChange={(e) => handleInputChange('description', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                rows="3"
+                placeholder="Describe what this job does, its purpose, and any important notes..."
+              />
+            </FormField>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => navigate('/jobs')}
+                className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Creating Job...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4" />
+                    Create Job
+                  </>
+                )}
+              </button>
             </div>
           </form>
-        </div>
-
-        {/* Help Section */}
-        <div className="mt-8 card p-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200">
-          <div className="flex items-start gap-4">
-            <div className="p-2 bg-amber-500 rounded-lg shadow-sm">
-              <AlertCircle className="w-5 h-5 text-white" />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-amber-900 mb-3">Cron Expression Guide</h3>
-              <div className="text-sm text-amber-800 space-y-2">
-                <p className="font-mono bg-amber-100 px-2 py-1 rounded">* * * * * = minute hour day month day-of-week</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <div>
-                    <p><code className="bg-amber-100 px-1 rounded">0 9 * * 1-5</code> = Weekdays at 9 AM</p>
-                    <p><code className="bg-amber-100 px-1 rounded">*/15 * * * *</code> = Every 15 minutes</p>
-                  </div>
-                  <div>
-                    <p><code className="bg-amber-100 px-1 rounded">0 0 1 * *</code> = Monthly on 1st</p>
-                    <p><code className="bg-amber-100 px-1 rounded">0 22 * * *</code> = Daily at 10 PM</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
   );
 };
 
-export default CreateJobPage;
+export default CreateJob;
