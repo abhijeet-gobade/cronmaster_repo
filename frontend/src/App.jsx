@@ -3,12 +3,10 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } f
 import { 
   Activity, 
   Clock, 
-  Plus, 
   List, 
   Zap, 
   Menu,
   X,
-  Sparkles,
   LogOut,
   User
 } from 'lucide-react';
@@ -31,10 +29,10 @@ const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, logout } = useAuth();
   
+  // Simplified navigation - removed Create Job from navbar
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: Activity },
     { path: '/jobs', label: 'Jobs', icon: List },
-    { path: '/create', label: 'Create Job', icon: Plus },
     { path: '/logs', label: 'Logs', icon: Zap },
   ];
 
@@ -49,25 +47,21 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="bg-white/80 backdrop-blur-md border-b border-gray-200/50 sticky top-0 z-50 shadow-sm">
+    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo */}
+          {/* Logo - Simplified */}
           <Link to="/dashboard" className="flex items-center gap-3 group">
-            <div className="relative">
-              <Clock className="w-8 h-8 text-blue-600 group-hover:text-blue-700 transition-colors" />
-              <Sparkles className="w-3 h-3 text-blue-400 absolute -top-1 -right-1 animate-pulse" />
-            </div>
+            <Clock className="w-8 h-8 text-blue-600 group-hover:text-blue-700 transition-colors" />
             <div>
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              <span className="text-xl font-bold text-gray-900">
                 CronMaster
               </span>
-              <div className="text-xs text-gray-500 -mt-1">Job Scheduler</div>
             </div>
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-2">
+          <div className="hidden md:flex items-center space-x-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = isActiveRoute(item.path);
@@ -75,61 +69,66 @@ const Navbar = () => {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
                     isActive
-                      ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-md transform scale-105'
-                      : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 hover:scale-105'
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'animate-pulse' : ''}`} />
+                  <Icon className="w-4 h-4" />
                   {item.label}
                 </Link>
               );
             })}
-          </div>
 
-          {/* User Menu & Mobile menu button */}
-          <div className="flex items-center gap-2">
-            {/* User Menu - Desktop */}
-            <div className="hidden md:flex items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-xl">
-                <div className="p-1 bg-blue-500 rounded-lg">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-                <span className="text-sm font-medium text-gray-700">
-                  {user?.name || 'User'}
-                </span>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
-                title="Sign Out"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="text-sm font-medium">Sign Out</span>
-              </button>
-            </div>
-
-            {/* Mobile menu button */}
-            <div className="md:hidden">
+            {/* User Menu */}
+            <div className="ml-4 relative">
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded-xl text-gray-700 hover:bg-gray-100 transition-colors"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50"
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                <User className="w-4 h-4" />
+                <span className="hidden sm:block">{user?.name || 'User'}</span>
               </button>
+              
+              {/* Dropdown Menu */}
+              {mobileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                  <div className="px-4 py-2 border-b border-gray-100">
+                    <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+                    <p className="text-xs text-gray-500">{user?.email}</p>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </button>
+                </div>
+              )}
             </div>
+          </div>
+
+          {/* Mobile menu button */}
+          <div className="md:hidden">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
 
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-gray-200 bg-white/95 backdrop-blur-sm">
+          <div className="md:hidden border-t border-gray-200 bg-white">
             <div className="px-2 pt-2 pb-3 space-y-1">
               {/* User Info - Mobile */}
               <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 mb-2">
                 <div className="p-2 bg-blue-500 rounded-lg">
-                  <User className="w-5 h-5 text-white" />
+                  <User className="w-4 h-4 text-white" />
                 </div>
                 <div>
                   <p className="font-medium text-gray-900">{user?.name || 'User'}</p>
@@ -146,10 +145,10 @@ const Navbar = () => {
                     key={item.path}
                     to={item.path}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all ${
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-base font-medium transition-all ${
                       isActive
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-md'
-                        : 'text-gray-700 hover:bg-gray-100'
+                        ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-500'
+                        : 'text-gray-700 hover:bg-gray-50'
                     }`}
                   >
                     <Icon className="w-5 h-5" />
@@ -161,7 +160,7 @@ const Navbar = () => {
               {/* Logout - Mobile */}
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
               >
                 <LogOut className="w-5 h-5" />
                 Sign Out
@@ -176,7 +175,7 @@ const Navbar = () => {
 
 const AppContent = () => {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
+    <div className="min-h-screen bg-gray-50">
       <Routes>
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
@@ -187,7 +186,7 @@ const AppContent = () => {
         <Route path="/dashboard" element={
           <ProtectedRoute>
             <Navbar />
-            <main className="fade-in">
+            <main>
               <Dashboard />
             </main>
           </ProtectedRoute>
@@ -195,7 +194,7 @@ const AppContent = () => {
         <Route path="/jobs" element={
           <ProtectedRoute>
             <Navbar />
-            <main className="fade-in">
+            <main>
               <JobsList />
             </main>
           </ProtectedRoute>
@@ -203,7 +202,7 @@ const AppContent = () => {
         <Route path="/create" element={
           <ProtectedRoute>
             <Navbar />
-            <main className="fade-in">
+            <main>
               <CreateJob />
             </main>
           </ProtectedRoute>
@@ -211,7 +210,7 @@ const AppContent = () => {
         <Route path="/logs" element={
           <ProtectedRoute>
             <Navbar />
-            <main className="fade-in">
+            <main>
               <LogsPage />
             </main>
           </ProtectedRoute>
