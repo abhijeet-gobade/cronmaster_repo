@@ -2,11 +2,14 @@ const logger = require('./logger');
 
 // Try different import methods for cron-parser
 let cronParser;
+let parseExpression;
 try {
   cronParser = require('cron-parser');
+  parseExpression = cronParser.parseExpression;
 } catch (error) {
   logger.error('Failed to import cron-parser:', error);
   cronParser = null;
+  parseExpression = null;
 }
 
 /**
@@ -129,7 +132,7 @@ const parseCronExpression = (cronExpression) => {
       '*/10 * * * *': 'Every 10 minutes',
       '*/15 * * * *': 'Every 15 minutes',
       '*/30 * * * *': 'Every 30 minutes',
-      '0 * * * *': 'Every hour (at minute 0)',
+      '0 * * * *': 'Every hour',
       '0 */2 * * *': 'Every 2 hours',
       '0 */4 * * *': 'Every 4 hours',
       '0 */6 * * *': 'Every 6 hours',
@@ -138,34 +141,36 @@ const parseCronExpression = (cronExpression) => {
       '0 9 * * *': 'Daily at 9:00 AM',
       '0 12 * * *': 'Daily at noon',
       '0 18 * * *': 'Daily at 6:00 PM',
-      '0 0 * * 0': 'Weekly on Sunday at midnight',
-      '0 0 * * 1': 'Weekly on Monday at midnight',
-      '0 0 * * 1-5': 'Weekdays at midnight',
       '0 9 * * 1-5': 'Weekdays at 9:00 AM',
-      '0 0 1 * *': 'Monthly on the 1st at midnight',
-      '0 0 1 1 *': 'Yearly on January 1st at midnight'
+      '0 0 * * 0': 'Weekly on Sunday',
+      '0 0 1 * *': 'Monthly on the 1st',
+      '0 0 1 1 *': 'Yearly on January 1st'
     };
 
-    // Check if it's a common pattern
+    // Check for exact matches first
     if (commonPatterns[cronExpression]) {
       return commonPatterns[cronExpression];
     }
 
-    // Parse individual parts for custom description
-    const [minute, hour, day, month, dayOfWeek] = cronExpression.trim().split(/\s+/);
-    
-    let description = 'At ';
+    // Parse the cron expression manually
+    const parts = cronExpression.split(' ');
+    if (parts.length !== 5) {
+      return 'Invalid cron expression format';
+    }
+
+    const [minute, hour, day, month, dayOfWeek] = parts;
+    let description = 'Runs';
 
     // Handle minutes
     if (minute === '*') {
-      description += 'every minute';
+      description += ' every minute';
     } else if (minute.includes('/')) {
       const step = minute.split('/')[1];
-      description += `every ${step} minutes`;
+      description += ` every ${step} minutes`;
     } else if (minute.includes(',')) {
-      description += `minutes ${minute}`;
+      description += ` at minutes ${minute}`;
     } else {
-      description += `minute ${minute}`;
+      description += ` at minute ${minute}`;
     }
 
     // Handle hours
@@ -272,7 +277,7 @@ const formatDayOfWeekRange = (range) => {
  */
 const getNextExecutions = (cronExpression, timezone = 'UTC', count = 5) => {
   try {
-    if (!parseExpression) {
+    if (!cronParser || !parseExpression) {
       return [getFallbackNextExecution(cronExpression)];
     }
 
